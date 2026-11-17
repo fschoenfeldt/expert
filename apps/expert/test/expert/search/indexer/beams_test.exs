@@ -114,6 +114,41 @@ defmodule Expert.Search.Indexer.BeamsTest do
       refute Enum.any?(entries, &(&1.subject == private_fun and &1.subtype == :definition))
     end
 
+    test "indexes functions named like the atoms nil, true and false", %{tmp_dir: tmp_dir} do
+      module = unique_module("LiteralNames")
+
+      source = """
+      defmodule #{inspect(module)} do
+        def unquote(nil)(value \\\\ :ok), do: value
+        def unquote(true)(value), do: value
+        defmacro unquote(false)(expr), do: expr
+      end
+      """
+
+      %{entries: entries} =
+        index_source!(
+          tmp_dir,
+          source,
+          expected_modules: [module],
+          rewrite_source?: false
+        )
+
+      for {subject, type, line} <- [
+            {Formats.mfa(module, "nil", 0), {:function, :public}, 2},
+            {Formats.mfa(module, "nil", 1), {:function, :public}, 2},
+            {Formats.mfa(module, "true", 1), {:function, :public}, 3},
+            {Formats.mfa(module, "false", 1), {:macro, :public}, 4}
+          ] do
+        assert [%Entry{range: %{start: start_pos}}] =
+                 Enum.filter(
+                   entries,
+                   &(&1.subject == subject and &1.type == type and &1.subtype == :definition)
+                 )
+
+        assert start_pos.line == line
+      end
+    end
+
     test "indexes definitions from module binaries", %{
       tmp_dir: tmp_dir
     } do

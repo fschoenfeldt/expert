@@ -325,7 +325,7 @@ defmodule Expert.Search.Indexer.Beams do
   end
 
   defp public_definition_entries(metadata, context) do
-    definitions = Map.get(metadata, "definitions", [])
+    definitions = definitions(metadata)
     protocol_callbacks = protocol_callbacks(metadata)
     protocol_definition? = module_type(metadata) == {:protocol, :definition}
     delegate_specs = delegate_specs_from_metadata(metadata)
@@ -428,10 +428,23 @@ defmodule Expert.Search.Indexer.Beams do
          definition,
          name
        ) do
-    meta(metadata, "super") == {definition, name}
+    case meta(metadata, "super") do
+      {^definition, super_name} -> function_name(super_name) == name
+      _super -> false
+    end
   end
 
   defp default_wrapper_clause?(_clause, _definition, _name), do: false
+
+  defp definitions(metadata) do
+    for {{name, arity}, definition, definition_metadata, clauses} <-
+          Map.get(metadata, "definitions", []),
+        do: {{function_name(name), arity}, definition, definition_metadata, clauses}
+  end
+
+  # ETF decodes the atoms nil, true and false to their literals, also as function names
+  defp function_name(name) when is_atom(name), do: Atom.to_string(name)
+  defp function_name(name), do: name
 
   defp public_definition_entries(
          context,
@@ -509,7 +522,7 @@ defmodule Expert.Search.Indexer.Beams do
 
   defp delegate_specs_from_metadata(metadata) do
     metadata
-    |> Map.get("definitions", [])
+    |> definitions()
     |> Enum.flat_map(&delegate_specs/1)
     |> Map.new()
   end
@@ -586,7 +599,7 @@ defmodule Expert.Search.Indexer.Beams do
 
   defp protocol_callbacks(metadata) do
     metadata
-    |> Map.get("definitions", [])
+    |> definitions()
     |> Enum.find_value([], fn
       {{"__protocol__", 1}, "def", _definition_metadata, clauses} ->
         protocol_callback_clauses(clauses)
